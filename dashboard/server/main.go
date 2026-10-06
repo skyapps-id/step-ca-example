@@ -74,6 +74,8 @@ func loadProvisioners(cfg config.Config) (map[string]types.ProvisionerKey, error
 	// muat semua provisioner tambahan dari file provisioner-*.jwk.json
 	// (nama provisioner diambil dari nama file)
 	extra, _ := filepath.Glob("provisioner-*.jwk.json")
+	jwkDir, _ := filepath.Glob(filepath.Join("jwk", "provisioner-*.jwk.json"))
+	extra = append(extra, jwkDir...)
 	for _, path := range extra {
 		base := filepath.Base(path)
 		name := strings.TrimSuffix(strings.TrimPrefix(base, "provisioner-"), ".jwk.json")

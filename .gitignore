@@ -2,7 +2,7 @@
 data/
 
 # ===== RAHASIA: private key provisioner (admin, iot, grpc, dst) =====
-dashboard/server/provisioner*.jwk.json
+dashboard/server/jwk/
 
 # ===== RAHASIA: sertifikat + private key hasil issue =====
 dashboard/server/issued/

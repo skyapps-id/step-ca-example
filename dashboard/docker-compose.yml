@@ -1,0 +1,38 @@
+name: dashboard
+
+services:
+  server:
+    build: ./server
+    container_name: dashboard-server
+    restart: unless-stopped
+    # CA dihubungi via https://localhost:9000 — "localhost" dipetakan ke host
+    # (host-gateway) agar SAN cert CA (localhost) cocok.
+    extra_hosts:
+      - "localhost:host-gateway"
+    environment:
+      LISTEN: ":8080"
+      CA_URL: "https://localhost:9000"
+      CA_ROOT: "/ca/root_ca.crt"
+      PROVISIONER_JWK: "/app/jwk/provisioner.jwk.json"
+      ISSUED_DIR: "/data/issued"
+      ADMIN_SUBJECT: "step"
+    working_dir: /app/jwk
+    volumes:
+      - ./jwk:/app/jwk          # private JWK provisioner (secrets)
+      - ./data:/data/issued     # sertifikat terbit (untuk renew)
+      - ../data/step/certs/root_ca.crt:/ca/root_ca.crt:ro
+    networks: [step-ca]
+
+  ui:
+    build: ./ui
+    container_name: dashboard-ui
+    restart: unless-stopped
+    ports:
+      - "8081:80"
+    depends_on: [server]
+    networks: [step-ca]
+
+networks:
+  step-ca:
+    external: true
+    name: step-ca_default
