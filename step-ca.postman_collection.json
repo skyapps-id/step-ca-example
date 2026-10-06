@@ -1,0 +1,946 @@
+{
+  "info": {
+    "_postman_id": "b7e1c9a2-4f3d-4c8e-9a1b-stepcaapi001",
+    "name": "step-ca API",
+    "description": "Koleksi endpoint HTTP step-ca (smallstep).\n\nSetup awal:\n1. CA default jalan di `https://localhost:9000` (docker-compose example ini).\n2. Karena sertifikat server CA biasanya self-signed: matikan **SSL certificate verification** di Postman (Settings > General) atau per-request.\n3. Untuk endpoint yang butuh **mTLS** (`/renew`, `/rekey`, `/ssh/renew`, `/ssh/rekey`): daftarkan client certificate di Postman (Settings > Certificates > Add client certificate) untuk host `localhost:9000`.\n4. Token (OTT) dibuat pakai step CLI, contoh:\n   `step ca token myserver.local --provisioner admin --ca-url https://localhost:9000 --root ./data/step/certs/root_ca.crt`\n   Untuk admin API: `step ca admin token ...` / gunakan provisioner admin.\n5. CSR contoh:\n   `step certificate create myserver.local server.csr server.key --csr --no-password --insecure`\n\nACME (`/acme/...`) sengaja tidak dimasukkan karena protokolnya butuh client ACME (certbot, step CLI, dsb), tidak praktis via Postman.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "step-ca-local"
+  },
+  "auth": {
+    "type": "noauth"
+  },
+  "event": [],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "https://localhost:9000"
+    },
+    {
+      "key": "fingerprint",
+      "value": "SHA256-fingerprint-tanpa-spasi"
+    },
+    {
+      "key": "kid",
+      "value": "provisioner-kid-dari-GET-provisioners"
+    },
+    {
+      "key": "ott",
+      "value": ""
+    },
+    {
+      "key": "csr",
+      "value": "-----BEGIN CERTIFICATE REQUEST-----\\n...\\n-----END CERTIFICATE REQUEST-----"
+    },
+    {
+      "key": "sshPublicKey",
+      "value": "base64-encoded-ssh-public-key"
+    },
+    {
+      "key": "serial",
+      "value": "serial-number-cert"
+    },
+    {
+      "key": "provisionerName",
+      "value": "admin"
+    },
+    {
+      "key": "adminName",
+      "value": "admin"
+    },
+    {
+      "key": "hostname",
+      "value": "myserver.local"
+    }
+  ],
+  "protocolProfileBehavior": {
+    "strictSSL": false
+  },
+  "item": [
+    {
+      "name": "Health & Info",
+      "item": [
+        {
+          "name": "Health",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Cek status CA. Response: `{\"status\":\"ok\"}`"
+          },
+          "response": []
+        },
+        {
+          "name": "Version",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/version",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "version"
+              ]
+            },
+            "description": "Versi server CA."
+          },
+          "response": []
+        },
+        {
+          "name": "Root by fingerprint",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/root/{{fingerprint}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "root",
+                "{{fingerprint}}"
+              ]
+            },
+            "description": "Root CA PEM by SHA256 fingerprint (format `step certificate fingerprint`, tanpa spasi). Response: `{\"ca\":\"PEM\"}`"
+          },
+          "response": []
+        },
+        {
+          "name": "Roots",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/roots",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "roots"
+              ]
+            },
+            "description": "Semua root CA. Response: `{\"crts\":[\"PEM\",...]}`"
+          },
+          "response": []
+        },
+        {
+          "name": "Intermediates",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/intermediates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "intermediates"
+              ]
+            },
+            "response": []
+          },
+          "response": []
+        },
+        {
+          "name": "Federation",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/federation",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "federation"
+              ]
+            },
+            "response": []
+          },
+          "response": []
+        },
+        {
+          "name": "CRL",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/crl",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "crl"
+              ]
+            },
+            "description": "Certificate Revocation List (der). Endpoint ini di-mount di insecure mux (bisa via HTTP)."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Provisioners",
+      "item": [
+        {
+          "name": "List provisioners",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.provisioners && json.provisioners.length > 0) {",
+                  "    pm.collectionVariables.set('kid', json.provisioners[0].id || json.provisioners[0].kid || '');",
+                  "    pm.collectionVariables.set('provisionerName', json.provisioners[0].name || '');",
+                  "    console.log('kid disimpan ke variable:', json.provisioners[0].id || json.provisioners[0].kid);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/provisioners",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "provisioners"
+              ]
+            },
+            "description": "Daftar provisioner. Test script otomatis menyimpan `kid` provisioner pertama ke collection variable."
+          },
+          "response": []
+        },
+        {
+          "name": "Encrypted key JWK",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/provisioners/{{kid}}/encrypted-key",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "provisioners",
+                "{{kid}}",
+                "encrypted-key"
+              ]
+            },
+            "description": "Encrypted JWK private key dari provisioner. Response: `{\"key\":\"...\"}`"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "X.509 Certificates",
+      "item": [
+        {
+          "name": "Sign (issue certificate)",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"csr\": \"{{csr}}\",\n  \"ott\": \"{{ott}}\",\n  \"notBefore\": \"\",\n  \"notAfter\": \"\",\n  \"templateData\": {}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/sign",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sign"
+              ]
+            },
+            "description": "Issue certificate dari CSR + one-time token (OTT).\n\nBuat token:\n`step ca token myserver.local --provisioner admin --ca-url https://localhost:9000 --root ./data/step/certs/root_ca.crt`\n\nBuat CSR:\n`step certificate create myserver.local server.csr server.key --csr --no-password --insecure`\n\nCatatan: `notBefore`/`notAfter` kosongkan untuk pakai default provisioner. Bisa RFC3339 atau duration (mis. `24h`)."
+          },
+          "response": []
+        },
+        {
+          "name": "Renew (mTLS)",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/renew",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "renew"
+              ]
+            },
+            "description": "Renew certificate. **Wajib mTLS** (client certificate yang masih valid, belum expired). Tanpa body. Daftarkan client cert di Postman Settings > Certificates untuk host `localhost:9000`."
+          },
+          "response": []
+        },
+        {
+          "name": "Rekey (mTLS)",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"csr\": \"{{csr}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/rekey",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rekey"
+              ]
+            },
+            "description": "Renew dengan key baru dari CSR. **Wajib mTLS**."
+          },
+          "response": []
+        },
+        {
+          "name": "Revoke",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"serial\": \"{{serial}}\",\n  \"ott\": \"{{ott}}\",\n  \"reasonCode\": 0,\n  \"reason\": \"superseded\",\n  \"passive\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/revoke",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "revoke"
+              ]
+            },
+            "description": "Revoke certificate by serial.\n- `passive` harus `true` (revocation aktif/CRL-based belum diimplementasi).\n- `reasonCode`: 0=unspecified, 1=keyCompromise, 3=affiliationChanged, 4=superseded, 5=cessationOfOperation, 9=privilegeWithdrawn, 10=AACompromise.\n- Bisa pakai OTT **atau** mTLS client cert.\n\nAmbil serial: `step certificate inspect server.crt --format json | jq .serial_number`\n\nBuat token revoke:\n`step ca token --revoke --serial <serial> --provisioner admin --ca-url ... --root ...`"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "SSH CA",
+      "item": [
+        {
+          "name": "SSH Sign",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"publicKey\": \"{{sshPublicKey}}\",\n  \"ott\": \"{{ott}}\",\n  \"certType\": \"user\",\n  \"keyID\": \"user@local\",\n  \"principals\": [],\n  \"validAfter\": \"\",\n  \"validBefore\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ssh/sign",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ssh",
+                "sign"
+              ]
+            },
+            "description": "Issue SSH certificate.\n- `publicKey`: base64 dari wire format ssh public key.\n  `ssh-keygen -t ed25519 -f id_ed25519 && base64 -i id_ed25519.pub`\n- Token: `step ssh certificate user@local id_ed25519 --provisioner admin --ca-url ... --root ...` (CLI akan panggil endpoint ini), atau buat OTT manual.\n- `certType`: `user` atau `host`.\n- `principals`: daftar principal tambahan (host name/user).\n\nResponse `crt` = quoted base64 openssh wire format."
+          },
+          "response": []
+        },
+        {
+          "name": "SSH Roots",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ssh/roots",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ssh",
+                "roots"
+              ]
+            },
+            "description": "Public key SSH CA. Response: `{\"userKey\":[{\"publicKey\":\"...\",\"fingerprint\":\"...\"}],\"hostKey\":[...]}`"
+          },
+          "response": []
+        },
+        {
+          "name": "SSH Federation",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ssh/federation",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ssh",
+                "federation"
+              ]
+            },
+            "response": []
+          },
+          "response": []
+        },
+        {
+          "name": "SSH Hosts",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ssh/hosts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ssh",
+                "hosts"
+              ]
+            },
+            "description": "Daftar host terdaftar (butuh admin/provisioner tertentu). Response: `{\"hosts\":[{\"name\":\"...\",\"hosts\":[...]}]}`"
+          },
+          "response": []
+        },
+        {
+          "name": "SSH Check Host",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"host\",\n  \"principal\": \"{{hostname}}\",\n  \"token\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ssh/check-host",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ssh",
+                "check-host"
+              ]
+            },
+            "description": "Cek apakah host principal sudah pernah dibuatkan certificate. Response: `{\"exists\":true|false}`"
+          },
+          "response": []
+        },
+        {
+          "name": "SSH Bastion",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user\": \"user\",\n  \"hostname\": \"{{hostname}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ssh/bastion",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ssh",
+                "bastion"
+              ]
+            },
+            "description": "Info bastion untuk host tertentu. Response: `{\"hostname\":\"...\",\"bastion\":{...}|null}`"
+          },
+          "response": []
+        },
+        {
+          "name": "SSH Config",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"user\",\n  \"data\": {\n    \"Certificate\": \"\",\n    \"Key\": \"\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ssh/config",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ssh",
+                "config"
+              ]
+            },
+            "description": "Template ssh_config. `type`: `user` atau `host`. Response: `{\"userTemplates\":{...},\"hostTemplates\":{...}}`"
+          },
+          "response": []
+        },
+        {
+          "name": "SSH Renew (mTLS)",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ssh/renew",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ssh",
+                "renew"
+              ]
+            },
+            "description": "Renew SSH certificate. **Wajib mTLS** dengan SSH cert di dlm client certificate header (endpoint ini dipanggil via HTTPS mTLS dgn sertifikat X.509 identity)."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Admin API",
+      "description": "Admin API step-ca (teruji jalan di setup ini).\n\n⚠️ QUIRK KRUSIAL: middleware auth step-ca v0.30.2 TIDAK melakukan strip pada prefix 'Bearer '.\nHeader Authorization harus diisi token MURNI — TANPA 'Bearer '!\nJika pakai 'Bearer <token>', go-jose menghapus spasi lalu mendekode 'BearereyJ...' sebagai base64\n→ error 'invalid character \\x05' / 'illegal base64 data' yang sangat membingungkan.\n\nToken yang benar = X5C JWT (bukan OTT):\n- header: {alg:ES256, kid:<thumbprint RFC7638 pub-key>, typ:JWT, x5c:[leaf, intermediate]}\n- claims: {aud: <caURL><path>, iss: 'step-admin-client/1.0', sub: 'step', iat, exp, jti}\n- di-sign dengan private key cert super admin (subject 'step')\n\nCara mint cepat via CLI di container:\ndocker exec step-ca step crypto jwt sign --x5c-cert /tmp/admin.crt --x5c-key /tmp/admin.key \\\n  --iss step-admin-client/1.0 --sub step --aud 'https://localhost:9000/admin/provisioners' \\\n  --exp $(( $(date +%s) + 300 ))\n\nLalu: curl -H \"Authorization: $TOKEN\" (tanpa Bearer!) https://localhost:9000/admin/provisioners\n\nReferensi bug: https://github.com/smallstep/cli/issues/860",
+      "item": [
+        {
+          "name": "Get provisioner",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ott}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/provisioners/{{provisionerName}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "provisioners",
+                "{{provisionerName}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List provisioners",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ott}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/provisioners",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "provisioners"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create provisioner",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ott}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"new-provisioner\",\n  \"type\": \"JWK\",\n  \"claims\": {\n    \"maxTLSCertDuration\": \"24h\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/provisioners",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "provisioners"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update provisioner",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ott}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"new-provisioner\",\n  \"claims\": {\n    \"maxTLSCertDuration\": \"48h\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/provisioners/{{provisionerName}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "provisioners",
+                "{{provisionerName}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete provisioner",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ott}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/provisioners/{{provisionerName}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "provisioners",
+                "{{provisionerName}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List admins",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ott}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/admins",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "admins"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create admin",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ott}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subject\": \"newadmin\",\n  \"provisioner\": \"{{provisionerName}}\",\n  \"type\": \"SUPER_ADMIN\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/admins",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "admins"
+              ]
+            },
+            "description": "`type`: `SUPER_ADMIN` atau `ADMIN`."
+          },
+          "response": []
+        },
+        {
+          "name": "Get authority policy",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ott}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/policy",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "policy"
+              ]
+            },
+            "description": "Name policy authority-wide (allow/deny DNS names, dll)."
+          },
+          "response": []
+        },
+        {
+          "name": "Create ACME EAB key",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ott}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reference\": \"my-acme-client\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/acme/eab/{{provisionerName}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "acme",
+                "eab",
+                "{{provisionerName}}"
+              ]
+            },
+            "description": "Buat External Account Binding key untuk ACME provisioner."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

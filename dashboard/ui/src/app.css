@@ -1,0 +1,16 @@
+/* app.css — reset global minimal.
+   Semua styling aplikasi ada di App.svelte (scoped). */
+
+body {
+  margin: 0;
+  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  background: #09090b;
+  color: #ececf1;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#app {
+  width: 100%;
+  min-height: 100vh;
+}

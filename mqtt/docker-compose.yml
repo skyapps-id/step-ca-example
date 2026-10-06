@@ -1,0 +1,14 @@
+name: emqx
+
+services:
+  emqx:
+    image: emqx/emqx:5.8.8
+    container_name: emqx
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+      - "8883:8883"
+      - "18083:18083"
+    volumes:
+      - ./emqx.conf:/opt/emqx/etc/emqx.conf:ro
+      - ./certs:/opt/emqx/etc/certs:ro

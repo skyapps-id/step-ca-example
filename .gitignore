@@ -1,0 +1,21 @@
+# ===== RAHASIA: seluruh CA (kunci root/intermediate, password, database) =====
+data/
+
+# ===== RAHASIA: private key provisioner (admin, iot, grpc, dst) =====
+dashboard/server/provisioner*.jwk.json
+
+# ===== RAHASIA: sertifikat + private key hasil issue =====
+dashboard/server/issued/
+mqtt/certs/
+
+# ===== build artifacts =====
+dashboard/server/dashboard-server
+dashboard/ui/dist/
+node_modules/
+
+# ===== environment =====
+.env
+
+# ===== OS / editor =====
+.DS_Store
+*.log

@@ -1,0 +1,55 @@
+name: step-ca
+
+services:
+  step-ca-init:
+    image: smallstep/step-ca:${STEP_CA_VERSION:-latest}
+    container_name: step-ca-init
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        if [ ! -f "$$STEPPATH/certs/root_ca.crt" ]; then
+          mkdir -p "$$STEPPATH/secrets"
+          if [ ! -s "$$STEPPATH/secrets/password" ]; then
+            echo "Generate password CA baru..."
+            head -c 32 /dev/urandom | base64 > "$$STEPPATH/secrets/password"
+          fi
+          echo "Inisialisasi step-ca..."
+          step ca init \
+            --name "$$CA_NAME" \
+            --deployment-type standalone \
+            --dns "$$CA_DNS" \
+            --address ":9000" \
+            --provisioner "$$CA_PROVISIONER" \
+            --password-file "$$STEPPATH/secrets/password" \
+            --remote-management
+        else
+          echo "CA sudah terinisialisasi, lewati init."
+          echo "(Catatan: Admin API + super admin hanya di-set saat init fresh via --remote-management)"
+        fi
+    environment:
+      STEPPATH: /home/step
+      CA_NAME: ${CA_NAME:-Step CA Local}
+      CA_DNS: ${CA_DNS:-localhost}
+      CA_PROVISIONER: ${CA_PROVISIONER:-admin}
+    volumes:
+      - ./data/step:/home/step
+
+  step-ca:
+    image: smallstep/step-ca:${STEP_CA_VERSION:-latest}
+    container_name: step-ca
+    depends_on:
+      step-ca-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    ports:
+      - "${CA_PORT:-9000}:9000"
+    environment:
+      STEPPATH: /home/step
+    volumes:
+      - ./data/step:/home/step
+    healthcheck:
+      test: ["CMD", "step", "ca", "healthcheck", "--ca-url", "https://localhost:9000", "--root", "/home/step/certs/root_ca.crt"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
