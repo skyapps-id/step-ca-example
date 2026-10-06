@@ -10,10 +10,10 @@ services:
         if [ ! -f "$$STEPPATH/certs/root_ca.crt" ]; then
           mkdir -p "$$STEPPATH/secrets"
           if [ ! -s "$$STEPPATH/secrets/password" ]; then
-            echo "Generate password CA baru..."
+            echo "Generating new CA password..."
             head -c 32 /dev/urandom | base64 > "$$STEPPATH/secrets/password"
           fi
-          echo "Inisialisasi step-ca..."
+          echo "Initializing step-ca..."
           step ca init \
             --name "$$CA_NAME" \
             --deployment-type standalone \
@@ -23,8 +23,7 @@ services:
             --password-file "$$STEPPATH/secrets/password" \
             --remote-management
         else
-          echo "CA sudah terinisialisasi, lewati init."
-          echo "(Catatan: Admin API + super admin hanya di-set saat init fresh via --remote-management)"
+          echo "CA already initialized, skipping init."
         fi
     environment:
       STEPPATH: /home/step
@@ -48,8 +47,38 @@ services:
     volumes:
       - ./data/step:/home/step
     healthcheck:
-      test: ["CMD", "step", "ca", "healthcheck", "--ca-url", "https://localhost:9000", "--root", "/home/step/certs/root_ca.crt"]
+      # NB: the command is `step ca health`, NOT `step ca healthcheck`
+      test: ["CMD", "step", "ca", "health", "--ca-url", "https://localhost:9000", "--root", "/home/step/certs/root_ca.crt"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 10s
+
+  # one-shot: decrypt the provisioner encryptedKey from the CA → provisioner.jwk.json
+  # for the dashboard. Idempotent: skips if the file already exists.
+  jwk-init:
+    image: smallstep/step-ca:${STEP_CA_VERSION:-latest}
+    container_name: dashboard-jwk-init
+    depends_on:
+      step-ca:
+        condition: service_healthy
+    volumes:
+      - ./dashboard/server/jwk:/out
+      - ./data/step/secrets/password:/secrets/password:ro
+      - ./data/step/certs/root_ca.crt:/ca/root_ca.crt:ro
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        if [ -f /out/provisioner.jwk.json ]; then
+          echo "provisioner.jwk.json already exists — skipping"
+          exit 0
+        fi
+        LIST=$(step ca provisioner list --ca-url https://step-ca:9000 --root /ca/root_ca.crt)
+        ENC=$(echo "$LIST" | sed -n 's/.*"encryptedKey":"\([^"]*\)".*/\1/p' | head -1)
+        if [ -z "$ENC" ]; then
+          echo "encryptedKey not found"
+          exit 1
+        fi
+        echo "$ENC" | step crypto jwe decrypt --password-file /secrets/password > /out/provisioner.jwk.json
+        echo "✓ provisioner.jwk.json generated automatically"
+
