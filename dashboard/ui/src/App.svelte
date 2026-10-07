@@ -17,6 +17,91 @@
   let provBusy = $state(false)
   let provError = $state('')
   let renewMsg = $state('')
+  let deployMode = $state('tls')
+
+  const modeMeta = {
+    'tls': { label: 'TLS', title: 'TLS — one-way authentication' },
+    'mtls-server': { label: 'mTLS · Server', title: 'mTLS — server side' },
+    'mtls-client': { label: 'mTLS · Client', title: 'mTLS — client side' },
+  }
+
+  // mermaid diagrams per connection type ("you" node is highlighted purple, keys are red)
+  const diagrams = {
+    tls: [
+      'flowchart LR',
+      '  K["🔑 server.key"] -.-> S',
+      '  C["💻 Client"] -- "① TLS handshake" --> S["🖥️ Server"]',
+      '  S -- "② server.crt" --> C',
+      '  R["root_ca.crt"] -. "verify server" .-> C',
+      '  classDef store fill:#121216,stroke:#232329,color:#ececf1',
+      '  classDef secret fill:#121216,stroke:#f87171,stroke-dasharray:4 3,color:#ececf1',
+      '  classDef you stroke:#8b5cf6,stroke-width:2px',
+      '  class R store',
+      '  class K secret',
+      '  class S you',
+    ].join('\n'),
+    'mtls-server': [
+      'flowchart LR',
+      '  K["🔑 server.key"] -.-> S',
+      '  C["💻 Client"] -- "① client.crt" --> S["🖥️ Server"]',
+      '  S -- "② server.crt" --> C',
+      '  R1["ca-chain.crt"] -. "verify client" .-> S',
+      '  R2["root_ca.crt"] -. "verify server" .-> C',
+      '  classDef store fill:#121216,stroke:#232329,color:#ececf1',
+      '  classDef secret fill:#121216,stroke:#f87171,stroke-dasharray:4 3,color:#ececf1',
+      '  classDef you stroke:#8b5cf6,stroke-width:2px',
+      '  class R1 store',
+      '  class R2 store',
+      '  class K secret',
+      '  class S you',
+    ].join('\n'),
+    'mtls-client': [
+      'flowchart LR',
+      '  K["🔑 client.key"] -.-> C',
+      '  C["💻 Client"] -- "① client.crt" --> S["🖥️ Server"]',
+      '  S -- "② server.crt" --> C',
+      '  R1["ca-chain.crt"] -. "verify client" .-> S',
+      '  R2["root_ca.crt"] -. "verify server" .-> C',
+      '  classDef store fill:#121216,stroke:#232329,color:#ececf1',
+      '  classDef secret fill:#121216,stroke:#f87171,stroke-dasharray:4 3,color:#ececf1',
+      '  classDef you stroke:#8b5cf6,stroke-width:2px',
+      '  class R1 store',
+      '  class R2 store',
+      '  class K secret',
+      '  class C you',
+    ].join('\n'),
+  }
+
+  // svelte action: render mermaid source into a node (lazy-loads mermaid)
+  let mmdSeq = 0
+  async function diagram(node, code) {
+    const { default: mermaid } = await import('mermaid')
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: 'base',
+      themeVariables: {
+        background: 'transparent',
+        primaryColor: '#17171c',
+        primaryTextColor: '#ececf1',
+        primaryBorderColor: '#232329',
+        lineColor: '#8b8d98',
+        edgeLabelBackground: '#121216',
+        fontFamily: 'ui-sans-serif, system-ui, sans-serif',
+        fontSize: '14px',
+      },
+      flowchart: { curve: 'basis', padding: 10 },
+    })
+    const render = async (src) => {
+      try {
+        const { svg } = await mermaid.render('mmd-' + (++mmdSeq), src)
+        node.innerHTML = svg
+      } catch {
+        node.textContent = src
+      }
+    }
+    await render(code)
+    return { update: render }
+  }
 
   async function renewCert(serial) {
     renewMsg = `Renewing ${serial.slice(0, 12)}...`
@@ -223,6 +308,14 @@
         </div>
         <form onsubmit={issueCert} class="grid-2">
           <label class="span-2">
+            <span>Connection Type <em>choose first — it drives the deployment guide below</em></span>
+            <select bind:value={deployMode}>
+              <option value="tls">TLS — server only</option>
+              <option value="mtls-server">mTLS — Server</option>
+              <option value="mtls-client">mTLS — Client</option>
+            </select>
+          </label>
+          <label class="span-2">
             <span>Subject (CN)</span>
             <input bind:value={subject} placeholder="iot-sensor-02.local" required />
           </label>
@@ -277,41 +370,91 @@
       </section>
 
       <section class="card">
-        <div class="card-head">
-          <h2>Deployment Guide</h2>
-          <p>Download files per role — enabled once a certificate has been issued.</p>
+        <div class="card-head guide-head">
+          <div>
+            <h2>Deployment Guide</h2>
+            <p>Follows the Connection Type selected in the Issue form.</p>
+          </div>
+          <span class="badge mode-badge">{modeMeta[deployMode].label}</span>
         </div>
-        <div class="guides">
-          <div class="guide">
-            <h3>🖥️ Server — TLS</h3>
-            <p>Only the server is verified by clients.</p>
-            <div class="dl-list">
-              <button disabled={!result} onclick={() => download(`${result.subject}-server.crt`, serverBundle())}>server.crt</button>
-              <button disabled={!result} onclick={() => download(`${result.subject}-server.key`, result.key)}>server.key</button>
-            </div>
-            <p class="comp">server.crt = <em>leaf + intermediate</em></p>
+
+        {#if deployMode === 'tls'}
+          <div class="explain">
+            <h3>{modeMeta[deployMode].title}</h3>
+            <p>
+              Only the <strong>server</strong> proves its identity. The client verifies the
+              server certificate against the root CA (trust anchor); the server never checks
+              who the client is. Anyone may connect — the traffic is just encrypted.
+            </p>
+            <div class="diagram" use:diagram={diagrams.tls}></div>
+            <p class="use"><strong>Best for:</strong> web apps, public REST APIs, dashboards — anything that only needs encryption + server authenticity.</p>
           </div>
-          <div class="guide">
-            <h3>🔒 Server — mTLS</h3>
-            <p>The server also verifies client certificates.</p>
-            <div class="dl-list">
-              <button disabled={!result} onclick={() => download(`${result.subject}-server.crt`, serverBundle())}>server.crt</button>
-              <button disabled={!result} onclick={() => download(`${result.subject}-server.key`, result.key)}>server.key</button>
-              <button disabled={!result || !rootsPem} onclick={() => download('ca-chain.crt', caChain())}>ca-chain.crt</button>
+          <div class="roles">
+            <div class="role">
+              <h4>🖥️ Server side</h4>
+              <p>Certificate + private key installed on the web server (Nginx, Go, etc).</p>
+              <div class="dl-list">
+                <button disabled={!result} onclick={() => download(`${result.subject}-server.crt`, serverBundle())}>server.crt <small>leaf + intermediate</small></button>
+                <button disabled={!result} onclick={() => download(`${result.subject}-server.key`, result.key)}>server.key <small>private key</small></button>
+              </div>
             </div>
-            <p class="comp">ca-chain.crt = <em>intermediate + root</em></p>
-          </div>
-          <div class="guide">
-            <h3>📱 Client — mTLS</h3>
-            <p>The client proves its identity to the server.</p>
-            <div class="dl-list">
-              <button disabled={!result} onclick={() => download(`${result.subject}-client.crt`, result.crt)}>client.crt</button>
-              <button disabled={!result} onclick={() => download(`${result.subject}-client.key`, result.key)}>client.key</button>
-              <button disabled={!rootsPem} onclick={() => download('root_ca.crt', rootsPem)}>root_ca.crt</button>
+            <div class="role">
+              <h4>💻 Client side</h4>
+              <p>Only needs the root CA to verify the server — no certificate of its own.</p>
+              <div class="dl-list">
+                <button disabled={!rootsPem} onclick={() => download('root_ca.crt', rootsPem)}>root_ca.crt <small>trust anchor</small></button>
+              </div>
             </div>
-            <p class="comp">root_ca.crt = <em>root only (trust anchor)</em></p>
           </div>
-        </div>
+        {:else if deployMode === 'mtls-server'}
+          <div class="explain">
+            <h3>{modeMeta[deployMode].title}</h3>
+            <p>
+              The server <strong>proves its identity</strong> to clients and simultaneously
+              <strong>verifies incoming clients</strong> using <code>ca-chain.crt</code>.
+              Connections are rejected unless the client presents a certificate signed by the same CA.
+            </p>
+            <div class="diagram" use:diagram={diagrams['mtls-server']}></div>
+            <p class="use"><strong>Best for:</strong> internal APIs, backend services that accept connections only from trusted devices/services.</p>
+          </div>
+          <div class="roles">
+            <div class="role">
+              <h4>🖥️ Server side</h4>
+              <p>Server certificate + chain used to verify incoming clients.</p>
+              <div class="dl-list">
+                <button disabled={!result} onclick={() => download(`${result.subject}-server.crt`, serverBundle())}>server.crt <small>leaf + intermediate</small></button>
+                <button disabled={!result} onclick={() => download(`${result.subject}-server.key`, result.key)}>server.key <small>private key</small></button>
+                <button disabled={!result || !rootsPem} onclick={() => download('ca-chain.crt', caChain())}>ca-chain.crt <small>intermediate + root</small></button>
+              </div>
+            </div>
+          </div>
+          <p class="hint">The client side needs <code>client.crt</code> + <code>client.key</code> + <code>root_ca.crt</code> — issue another one using the <strong>mTLS — Client</strong> mode.</p>
+        {:else}
+          <div class="explain">
+            <h3>{modeMeta[deployMode].title}</h3>
+            <p>
+              The client <strong>proves its identity</strong> to the server using
+              <code>client.crt</code> and <strong>verifies the server</strong> using
+              <code>root_ca.crt</code>. The server only accepts clients whose certificates
+              are signed by the same CA.
+            </p>
+            <div class="diagram" use:diagram={diagrams['mtls-client']}></div>
+            <p class="use"><strong>Best for:</strong> IoT devices, agents, CLI/app clients accessing internal services.</p>
+          </div>
+          <div class="roles">
+            <div class="role">
+              <h4>📱 Client side</h4>
+              <p>Client certificate as identity + root CA to verify the server.</p>
+              <div class="dl-list">
+                <button disabled={!result} onclick={() => download(`${result.subject}-client.crt`, result.crt)}>client.crt <small>client identity</small></button>
+                <button disabled={!result} onclick={() => download(`${result.subject}-client.key`, result.key)}>client.key <small>private key</small></button>
+                <button disabled={!rootsPem} onclick={() => download('root_ca.crt', rootsPem)}>root_ca.crt <small>trust anchor</small></button>
+              </div>
+            </div>
+          </div>
+          <p class="hint">The server side needs <code>server.crt</code> + <code>server.key</code> + <code>ca-chain.crt</code> — issue another one using the <strong>mTLS — Server</strong> mode.</p>
+        {/if}
+        {#if !result}<p class="hint">Downloads unlock once a certificate is issued in the form above.</p>{/if}
       </section>
 
     <!-- ===== TAB: PROVISIONERS ===== -->
@@ -596,28 +739,50 @@
   .badge.green { color: var(--green); border-color: rgba(52, 211, 153, 0.3); }
   .badge.dimb { opacity: 0.5; }
 
-  .guides { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
-  .guide {
-    border: 1px solid var(--border); border-radius: 12px; padding: 14px;
+  .guide-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .mode-badge {
+    font-size: 0.75rem; font-weight: 700; color: var(--accent);
+    border-color: rgba(139, 92, 246, 0.4);
+  }
+
+  .explain { margin-bottom: 18px; }
+  .explain h3 { margin: 0 0 8px; font-size: 0.92rem; }
+  .explain p { margin: 0 0 12px; font-size: 0.84rem; color: var(--muted); line-height: 1.55; }
+  .explain p strong { color: var(--text); }
+  .diagram {
+    display: grid; place-items: center;
+    padding: 10px; margin-bottom: 12px;
+    background: var(--bg); border: 1px solid var(--border); border-radius: 10px;
+  }
+  .diagram svg { max-width: 100%; height: auto; }
+  .use { font-size: 0.78rem !important; }
+  .use strong { color: var(--accent) !important; }
+
+  .roles { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+  .role {
+    border: 1px solid var(--border); border-radius: 12px; padding: 16px;
     background: var(--surface-2);
   }
-  .guide h3 { margin: 0 0 6px; font-size: 0.85rem; }
-  .guide p { margin: 0 0 10px; font-size: 0.75rem; color: var(--muted); }
-  .dl-list { display: flex; flex-direction: column; gap: 6px; }
+  .role h4 { margin: 0 0 6px; font-size: 0.85rem; }
+  .role > p { margin: 0 0 12px; font-size: 0.76rem; color: var(--muted); }
+  .dl-list { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
   .dl-list button {
-    display: flex; align-items: center; justify-content: space-between;
+    position: relative;
+    display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
     width: 100%; text-align: left;
     background: var(--bg); color: var(--text);
     border: 1px solid var(--border);
-    padding: 8px 12px; font-size: 0.78rem; border-radius: 8px;
+    padding: 8px 10px; font-size: 0.76rem; border-radius: 8px;
   }
-  .dl-list button::after { content: '⬇'; font-size: 0.72rem; color: var(--accent); }
+  .dl-list button small { color: var(--muted); font-size: 0.64rem; padding-right: 18px; }
+  .dl-list button::after {
+    content: '⬇'; font-size: 0.7rem; color: var(--accent);
+    position: absolute; top: 8px; right: 8px;
+  }
   .dl-list button:disabled { color: var(--muted); }
   .dl-list button:disabled::after { content: '·'; color: var(--border); }
   .dl-list button:not(:disabled):hover {
     border-color: var(--accent);
     background: rgba(139, 92, 246, 0.08);
   }
-  .comp { font-size: 0.68rem; color: var(--muted); margin: 8px 0 0; }
-  .comp em { font-style: normal; color: var(--accent); }
 </style>

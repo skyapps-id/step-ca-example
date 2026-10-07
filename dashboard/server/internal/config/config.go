@@ -21,7 +21,7 @@ func Load() Config {
 		CAURL:           env("CA_URL", "https://localhost:9000"),
 		CARoot:          env("CA_ROOT", "../../data/step/certs/root_ca.crt"),
 		ProvisionerName: env("PROVISIONER_NAME", "admin"),
-		ProvisionerJWK:  env("PROVISIONER_JWK", "provisioner.jwk.json"),
+		ProvisionerJWK:  env("PROVISIONER_JWK", "jwk/provisioner.jwk.json"),
 		IssuedDir:       env("ISSUED_DIR", "issued"),
 		AdminSubject:    env("ADMIN_SUBJECT", "step"),
 	}
