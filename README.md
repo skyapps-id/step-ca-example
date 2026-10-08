@@ -96,7 +96,126 @@ berubah diam-diam.
 
 ---
 
-## 2. Menerbitkan sertifikat
+## 2. Membuat Intermediate CA tambahan
+
+Satu instance step-ca hanya melayani **satu** intermediate (yang tercantum di
+`config/ca.json`). Kalau mau memisahkan domain kepercayaan — misalnya
+**Infrastructure**, **IoT**, dan **Kubernetes** — buat intermediate tambahan
+yang ditandatangani Root yang sama.
+
+> 📌 **Aturan penting: multi intermediate = multi instance.** Skema `ca.json`
+> hanya punya satu pasang field `crt` + `key`, dan API `/sign` tidak punya
+> parameter "pilih intermediate" — jadi tidak bisa memilih issuer per-request.
+> Provisioner juga terdaftar per instance. Cara idiomatis step-ca: **satu
+> intermediate = satu instance CA di port berbeda**:
+>
+> ```
+> :9000 → intermediate default        (umum / dashboard)
+> :9001 → IoT intermediate            (leaf pendek, policy ketat)
+> :9002 → Kubernetes intermediate     (untuk cluster)
+> ```
+>
+> "Memilih intermediate" = memilih CA URL tujuan. Detail pemakaian: bagian
+> [Cara pakai intermediate baru](#cara-pakai-intermediate-baru) di bawah.
+
+Membuat intermediate-nya sendiri adalah operasi **offline** (pakai kunci Root
+langsung), karena Admin API step-ca tidak punya endpoint untuk membuat intermediate:
+
+```bash
+docker exec step-ca step certificate create "Example Infrastructure Intermediate CA" \
+  /home/step/certs/infrastructure_ca.crt /home/step/secrets/infrastructure_ca_key \
+  --profile intermediate-ca \
+  --ca /home/step/certs/root_ca.crt --ca-key /home/step/secrets/root_ca_key \
+  --password-file /home/step/secrets/password \
+  --not-after 43800h   # 5 tahun
+
+docker exec step-ca step certificate create "Example IoT Intermediate CA" \
+  /home/step/certs/iot_ca.crt /home/step/secrets/iot_ca_key \
+  --profile intermediate-ca \
+  --ca /home/step/certs/root_ca.crt --ca-key /home/step/secrets/root_ca_key \
+  --password-file /home/step/secrets/password \
+  --not-after 43800h
+
+docker exec step-ca step certificate create "Example Kubernetes Intermediate CA" \
+  /home/step/certs/kubernetes_ca.crt /home/step/secrets/kubernetes_ca_key \
+  --profile intermediate-ca \
+  --ca /home/step/certs/root_ca.crt --ca-key /home/step/secrets/root_ca_key \
+  --password-file /home/step/secrets/password \
+  --not-after 43800h
+```
+
+Verifikasi:
+
+```bash
+docker exec step-ca step certificate inspect /home/step/certs/iot_ca.crt --short
+# Issuer: root CA, Basic Constraints CA=true, pathlen=0
+```
+
+Hasilnya di `data/step/`:
+
+| File | Fungsi |
+|---|---|
+| `certs/<nama>_ca.crt` | Sertifikat intermediate baru (publik — boleh dibagikan) |
+| `secrets/<nama>_ca_key` | Private key intermediate (terenkripsi password CA) |
+
+> ⚠️ Command di atas membaca **kunci Root langsung dari volume**. Di lab ini boleh,
+> tapi prinsip produksi: kunci Root harus offline/HSM, proses sign intermediate
+> dilakukan sekali di tempat yang aman.
+
+### Cara pakai intermediate baru
+
+Intermediate tambahan **tidak otomatis dipakai** instance step-ca yang berjalan —
+dia tetap menandatangani leaf dengan `intermediate_ca.crt` lama. Pemakaian umum:
+
+1. **Instance CA kedua (cara utama)** — tiap intermediate jadi "bintang" di
+   instance-nya sendiri. Salin `iot_ca.crt` + `iot_ca_key` ke STEPPATH baru
+   (sebagai `certs/intermediate_ca.crt` + `secrets/intermediate_ca_key`), buat
+   `ca.json` sendiri, lalu jalankan container `step-ca` kedua di port berbeda.
+   Contoh service compose untuk instance IoT:
+   ```yaml
+   step-ca-iot:
+     image: smallstep/step-ca:${STEP_CA_VERSION:-latest}
+     container_name: step-ca-iot
+     restart: unless-stopped
+     ports:
+       - "9001:9000"
+     environment:
+       STEPPATH: /home/step
+     volumes:
+       # struktur folder sama seperti data/step/, tapi isinya iot_ca.crt/key
+       - ./data/step-iot:/home/step
+   ```
+   Eksekusi awal `data/step-iot/`:
+   ```bash
+   mkdir -p data/step-iot/{certs,secrets,config,db}
+   cp data/step/secrets/password data/step-iot/secrets/password
+   cp data/step/certs/root_ca.crt data/step-iot/certs/
+   cp data/step/certs/iot_ca.crt data/step-iot/certs/intermediate_ca.crt
+   cp data/step/secrets/iot_ca_key data/step-iot/secrets/intermediate_ca_key
+   # ca.json: copy dari data/step/config/ca.json lalu sesuaikan dns
+   # (address tetap ":9000" — itu port di dalam container, host yang di-map 9001)
+   ```
+   Provisioner dibuat per instance (`step ca provisioner add ...` di container
+   tersebut). Trik: **JWK provisioner yang sama bisa didaftarkan ke beberapa
+   instance** — satu private key provisioner, cukup ganti `--ca-url` untuk
+   memilih intermediate mana yang menandatangani.
+2. **Terbit offline** — pakai intermediate itu langsung tanpa server CA:
+   ```bash
+   docker exec step-ca step certificate create "sensor-01" sensor.crt sensor.key \
+     --profile leaf --san 10.0.0.5 --san sensor-01.local \
+     --ca /home/step/certs/iot_ca.crt --ca-key /home/step/secrets/iot_ca_key \
+     --password-file /home/step/secrets/password --not-after 2160h
+   ```
+3. **Distribusikan** — kirim `kubernetes_ca.crt` + key-nya ke cluster/sistem lain
+   (mis. Kubernetes CFSSL/cert-manager, EMQX kedua) supaya punya CA sendiri di
+   bawah Root yang sama.
+
+Semua leaf dari intermediate baru tetap dipercaya client yang memegang
+`root_ca.crt` — chain: Root → Intermediate baru → leaf.
+
+---
+
+## 3. Menerbitkan sertifikat
 
 ### Cara Dashboard
 
@@ -116,7 +235,7 @@ Client mTLS). Riwayat + tombol **⟳ Renew** ada di tab **Certificates**.
 
 ---
 
-## 3. Mengelola provisioner
+## 4. Mengelola provisioner
 
 Provisioner = "pintu masuk" CA beserta policy-nya (siapa boleh minta cert,
 durasi maksimum, dll). Pemegang private key provisioner-lah yang boleh minta cert.
@@ -161,7 +280,7 @@ chmod 600 dashboard/server/provisioner-<nama>.jwk.json
 
 ---
 
-## 4. Renew
+## 5. Renew
 
 Renew step-ca memakai **cert+key lama sebagai kredensial mTLS** (`POST /renew`) —
 private key tidak berubah. step-ca mengizinkan renew kapan pun selama cert masih valid.
@@ -172,7 +291,7 @@ private key tidak berubah. step-ca mengizinkan renew kapan pun selama cert masih
 
 ---
 
-## 5. Quirk yang perlu diketahui (v0.30.2)
+## 6. Quirk yang perlu diketahui (v0.30.2)
 
 1. **Admin API: header Authorization TANPA "Bearer "**. Middleware auth tidak
    melakukan strip pada prefix `Bearer ` — go-jose malah mendekode
@@ -187,7 +306,7 @@ private key tidak berubah. step-ca mengizinkan renew kapan pun selama cert masih
 
 ---
 
-## 6. Topik lanjutan
+## 7. Topik lanjutan
 
 | Topik | Dokumen |
 |---|---|
@@ -196,7 +315,7 @@ private key tidak berubah. step-ca mengizinkan renew kapan pun selama cert masih
 | Koleksi API (Postman) | `step-ca.postman_collection.json` |
 | Konsep PKI, X5C, chain | deskripsi folder Admin API di koleksi Postman |
 
-## 7. Catatan produksi
+## 8. Catatan produksi
 
 - Sertifikat pendek + auto-renew > sertifikat umur panjang + revoke manual
 - Root CA key harus offline; yang online hanya intermediate
