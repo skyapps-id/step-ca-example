@@ -4,13 +4,17 @@ Prototipe dashboard untuk mengelola penerbitan sertifikat step-ca lewat HTTP API
 
 ## Arsitektur
 
-```
-┌──────────────┐   POST /api/certificates  ┌────────────────────┐  POST /sign   ┌─────────┐
-│  Svelte UI   │  {"subject":"dev01"}      │  Go backend :8080  │  {csr, ott}   │ step-ca │
-│  (Vite :5173)│ ─────────────────────────►│  1. gen key + CSR  │ ─────────────►│  :9000  │
-│              │                           │  2. sign OTT (JWT) │               └─────────┘
-│              │◄──── crt + key + chain ───│  3. POST /sign     │
-└──────────────┘                           └────────────────────┘
+```mermaid
+sequenceDiagram
+  participant UI as Svelte UI (:5173)
+  participant API as Go backend (:8080)
+  participant CA as step-ca (:9000)
+  UI->>API: POST /api/certificates {"subject":"dev01"}
+  API->>API: 1. generate key + CSR
+  API->>API: 2. sign OTT (JWT) dengan key provisioner
+  API->>CA: 3. POST /sign {csr, ott}
+  CA-->>API: crt + chain
+  API-->>UI: crt + key + chain
 ```
 
 Konsep penting: private key **provisioner** (bukan kunci CA!) di-decrypt sekali lalu disimpan di

@@ -5,26 +5,18 @@ CA server di Docker, dashboard (Go + Svelte) untuk menerbitkan, memperbarui, dan
 mengelola sertifikat & provisioner, plus contoh implementasi **TLS** (EMQX),
 **mTLS** (gRPC), dan **ACME** (Caddy).
 
-```
-┌─────────────────────────────┐
-│  step-ca  (localhost:9000)  │  ← Certificate Authority (HTTPS API + Admin API + ACME)
-│  Root → Intermediate        │
-└──────────┬──────────────────┘
-           │ issue cert (JWK token / ACME / X5C admin token)
-           ▼
-┌─────────────────────────────┐   TLS  :8883    ┌────────────────┐
-│  EMQX broker                │────────────────►│  MQTT client   │
-└─────────────────────────────┘                 └────────────────┘
-┌─────────────────────────────┐   mTLS :50051   ┌────────────────┐
-│  gRPC server (Go)           │◄───────────────►│  gRPC client   │
-└─────────────────────────────┘                 └────────────────┘
-┌─────────────────────────────┐   HTTPS :8443   ┌────────────────┐
-│  Caddy (cert via ACME)      │────────────────►│  browser/curl  │
-└─────────────────────────────┘                 └────────────────┘
-┌─────────────────────────────┐
-│  Dashboard Go + Svelte      │  issue · renew · download · kelola provisioner
-│  API :8080 · UI :5173       │  (Admin API via token X5C — lihat quirks)
-└─────────────────────────────┘
+```mermaid
+flowchart LR
+  subgraph CA["step-ca :9000"]
+    R["Root CA"] --> I["Intermediate CA"]
+  end
+  D["Dashboard Go + Svelte<br/>API :8080 · UI :5173"] -- "issue · renew (JWK OTT)<br/>provisioner (Admin API X5C)" --> CA
+  CA -. "emqx-server.crt" .-> E["EMQX broker :8883"]
+  CA -. "server.crt · client.crt" .-> G["gRPC server :50051"]
+  C["Caddy :8443"] <-->|"ACME"| CA
+  M["MQTT client"] -- "TLS" --> E
+  GC["gRPC client"] <-->|"mTLS"| G
+  B["browser / curl"] -- "HTTPS" --> C
 ```
 
 ## Tampilan

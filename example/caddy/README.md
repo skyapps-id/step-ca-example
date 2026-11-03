@@ -4,16 +4,17 @@ Web server Caddy yang **meminta dan memperbarui sertifikat HTTPS sendiri** dari
 step-ca melalui protokol ACME, sama seperti dengan Let's Encrypt, tapi untuk
 domain internal. Tidak ada file sertifikat yang perlu diterbitkan atau di-copy manual.
 
-```
-  ┌──────────────────────────┐   ACME (order, challenge, finalize)   ┌──────────────┐
-  │  step-ca                 │◄──────────────────────────────────────│  Caddy       │
-  │  provisioner "acme"      │──────── http-01 ke app.local:80 ─────►│  app.local   │
-  └──────────────────────────┘                                       └──────┬───────┘
-                                                                            │ HTTPS :8443
-                                                                     ┌──────▼───────┐
-                                                                     │ browser/curl │
-                                                                     │ root_ca.crt  │
-                                                                     └──────────────┘
+```mermaid
+sequenceDiagram
+  participant B as browser / curl
+  participant C as Caddy (app.local)
+  participant S as step-ca (provisioner acme)
+  C->>S: new order: app.local
+  S->>C: challenge http-01 ke app.local:80
+  C->>S: finalize (CSR)
+  S-->>C: certificate (24 jam)
+  Note over C,S: renew otomatis sebelum habis
+  B->>C: HTTPS :8443 (verifikasi dengan root_ca.crt)
 ```
 
 ## Prasyarat di step-ca (sekali saja)

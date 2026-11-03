@@ -4,17 +4,12 @@ Service gRPC (Go) yang hanya menerima client dengan sertifikat dari step-ca.
 Kedua sisi saling membuktikan identitas (**mutual TLS**), dan server membaca
 identitas client dari *Common Name* (CN) sertifikatnya, tanpa API key atau password.
 
-```
-                 ┌──────────────────────────┐
-                 │  step-ca (localhost:9000)│
-                 └─────┬──────────────┬─────┘
-            server.crt │              │ client.crt
-                       ▼              ▼
-        ┌─────────────────────┐  mTLS  ┌─────────────────────┐
-        │ gRPC server :50051  │◄──────►│ gRPC client         │
-        │ RequireAndVerify-   │        │ CN = sensor-01      │
-        │ ClientCert          │        │                     │
-        └─────────────────────┘        └─────────────────────┘
+```mermaid
+flowchart LR
+  D["Dashboard"] -- "issue" --> CA["step-ca :9000"]
+  CA -- "server.crt" --> S["gRPC server :50051<br/>RequireAndVerifyClientCert"]
+  CA -- "client.crt<br/>CN = sensor-01" --> C["gRPC client"]
+  C <-->|"🔒 mTLS"| S
 ```
 
 | Sisi | File | Fungsi |

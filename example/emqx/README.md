@@ -4,17 +4,11 @@ Broker MQTT EMQX dengan **TLS satu arah**: broker membuktikan identitasnya denga
 sertifikat dari step-ca, client cukup memegang `root_ca.crt` untuk memverifikasinya.
 Seluruh topic dan payload terenkripsi di jalur.
 
-```
-        ┌──────────────────────────┐
-        │  step-ca (localhost:9000)│
-        │  Root CA → Intermediate  │
-        └────────────┬─────────────┘
-                     │ issue emqx-server.crt
-                     ▼
-        ┌──────────────────────┐        TLS         ┌────────────────┐
-        │  EMQX listener :8883 │───────────────────►│  MQTT client   │
-        │  emqx-server.crt/key │  server cert       │  root_ca.crt   │
-        └──────────────────────┘                    └────────────────┘
+```mermaid
+flowchart LR
+  D["Dashboard"] -- "issue" --> CA["step-ca :9000<br/>Root → Intermediate"]
+  CA -- "emqx-server.crt" --> E["EMQX listener :8883<br/>emqx-server.crt + key"]
+  M["MQTT client<br/>root_ca.crt"] -- "🔒 TLS" --> E
 ```
 
 | Sisi | Butuh | Fungsi |
