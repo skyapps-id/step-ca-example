@@ -1,0 +1,12 @@
+app.local {
+	# minta sertifikat ke step-ca (provisioner ACME bernama "acme"), bukan Let's Encrypt.
+	# Ditulis eksplisit per site: tanpa ini Caddy memakai CA internalnya sendiri
+	# untuk nama non-publik seperti *.local
+	tls {
+		ca https://step-ca:9000/acme/acme/directory
+		# percayai TLS endpoint step-ca itu sendiri
+		ca_root /certs/root_ca.crt
+	}
+
+	respond "Hello from Caddy, certificate issued automatically by step-ca via ACME"
+}

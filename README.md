@@ -1,19 +1,26 @@
 # step-ca Example
 
 Lab lengkap belajar **Private PKI** dengan [step-ca](https://github.com/smallstep/certificates):
-CA server di Docker, broker EMQX dengan mTLS, dan dashboard (Go + Svelte) untuk
-menerbitkan, memperbarui, dan mengelola sertifikat & provisioner — semuanya via API murni.
+CA server di Docker, dashboard (Go + Svelte) untuk menerbitkan, memperbarui, dan
+mengelola sertifikat & provisioner, plus contoh implementasi **TLS** (EMQX),
+**mTLS** (gRPC), dan **ACME** (Caddy).
 
 ```
 ┌─────────────────────────────┐
-│  step-ca  (localhost:9000)  │  ← Certificate Authority (HTTPS API + Admin API)
+│  step-ca  (localhost:9000)  │  ← Certificate Authority (HTTPS API + Admin API + ACME)
 │  Root → Intermediate        │
 └──────────┬──────────────────┘
-           │ issue cert (JWK token / X5C admin token)
+           │ issue cert (JWK token / ACME / X5C admin token)
            ▼
-┌─────────────────────────────┐     mTLS 8883      ┌────────────────┐
-│  EMQX broker (:8883)        │◄──────────────────►│  MQTT client   │
-└─────────────────────────────┘                    └────────────────┘
+┌─────────────────────────────┐   TLS  :8883    ┌────────────────┐
+│  EMQX broker                │────────────────►│  MQTT client   │
+└─────────────────────────────┘                 └────────────────┘
+┌─────────────────────────────┐   mTLS :50051   ┌────────────────┐
+│  gRPC server (Go)           │◄───────────────►│  gRPC client   │
+└─────────────────────────────┘                 └────────────────┘
+┌─────────────────────────────┐   HTTPS :8443   ┌────────────────┐
+│  Caddy (cert via ACME)      │────────────────►│  browser/curl  │
+└─────────────────────────────┘                 └────────────────┘
 ┌─────────────────────────────┐
 │  Dashboard Go + Svelte      │  issue · renew · download · kelola provisioner
 │  API :8080 · UI :5173       │  (Admin API via token X5C — lihat quirks)
@@ -30,11 +37,12 @@ menerbitkan, memperbarui, dan mengelola sertifikat & provisioner — semuanya vi
 ├── docker-compose.yml              # step-ca (+ init bootstrap otomatis)
 ├── .env / .env.example             # STEP_CA_VERSION=0.30.2 (pin versi!), CA_NAME, dst
 ├── data/step/                      # STEPPATH: kunci CA, certs, config, DB (JANGAN di-commit)
-├── scripts/                        # helper kecil
-├── mqtt/                           # EMQX + mTLS (lihat mqtt/README.md)
-│   ├── docker-compose.yml
-│   ├── emqx.conf
-│   └── certs/
+├── example/                        # contoh implementasi (lihat example/README.md)
+│   ├── gen-cert.sh                 # helper issue leaf cert via API dashboard
+│   ├── emqx/                       # MQTT broker + TLS
+│   ├── grpc/                       # service Go + mTLS
+│   └── caddy/                      # web server + ACME (issue/renew otomatis)
+├── docs/                           # dokumen tambahan (issue via HTTP API, dst)
 ├── dashboard/
 │   ├── README.md                   # dokumentasi dashboard
 │   ├── server/                     # backend Go
@@ -231,7 +239,7 @@ Client mTLS). Riwayat + tombol **⟳ Renew** ada di tab **Certificates**.
 > Alternatif tanpa dashboard: CLI langsung di container
 > (`docker exec step-ca step ca certificate ... --provisioner admin ...`) —
 > berguna saat dashboard sedang tidak berjalan.
-> Detail lengkap: [mqtt/README.md](mqtt/README.md) bagian "Cara Alternatif — Issue via HTTP API".
+> Atau murni lewat HTTP API: [docs/issue-via-api.md](docs/issue-via-api.md).
 
 ---
 
@@ -310,7 +318,10 @@ private key tidak berubah. step-ca mengizinkan renew kapan pun selama cert masih
 
 | Topik | Dokumen |
 |---|---|
-| EMQX + mTLS end-to-end | [mqtt/README.md](mqtt/README.md) |
+| EMQX + TLS | [example/emqx/README.md](example/emqx/README.md) |
+| gRPC + mTLS (Go) | [example/grpc/README.md](example/grpc/README.md) |
+| Caddy + ACME (issue/renew otomatis) | [example/caddy/README.md](example/caddy/README.md) |
+| Issue sertifikat via HTTP API | [docs/issue-via-api.md](docs/issue-via-api.md) |
 | Dashboard (Go + Svelte), arsitektur `internal/` | [dashboard/README.md](dashboard/README.md) |
 | Koleksi API (Postman) | `step-ca.postman_collection.json` |
 | Konsep PKI, X5C, chain | deskripsi folder Admin API di koleksi Postman |

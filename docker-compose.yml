@@ -28,7 +28,7 @@ services:
     environment:
       STEPPATH: /home/step
       CA_NAME: ${CA_NAME:-Step CA Local}
-      CA_DNS: ${CA_DNS:-localhost}
+      CA_DNS: ${CA_DNS:-localhost,step-ca}
       CA_PROVISIONER: ${CA_PROVISIONER:-admin}
     volumes:
       - ./data/step:/home/step
