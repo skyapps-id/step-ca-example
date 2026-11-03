@@ -14,6 +14,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"math/big"
+	"net"
 	"os"
 
 	"dashboard-server/internal/types"
@@ -59,8 +60,16 @@ func GenerateCSR(subject string, sans []string) (csrPEM, keyPEM string, err erro
 	}
 	tmpl := &x509.CertificateRequest{
 		Subject:            pkix.Name{CommonName: subject},
-		DNSNames:           sans,
 		SignatureAlgorithm: x509.ECDSAWithSHA256,
+	}
+	// IP SANs must go in IPAddresses: step-ca matches them against the token's
+	// IP list, so an IP listed as a DNS name is rejected with 403
+	for _, s := range sans {
+		if ip := net.ParseIP(s); ip != nil {
+			tmpl.IPAddresses = append(tmpl.IPAddresses, ip)
+		} else {
+			tmpl.DNSNames = append(tmpl.DNSNames, s)
+		}
 	}
 	der, err := x509.CreateCertificateRequest(rand.Reader, tmpl, key)
 	if err != nil {

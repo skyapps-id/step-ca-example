@@ -16,8 +16,10 @@
   let newProvMax = $state('720h')
   let provBusy = $state(false)
   let provError = $state('')
-  let renewMsg = $state('')
+  let renewMsg = $state(null) // { ok, text }
+  let renewing = $state('')
   let deployMode = $state('tls')
+  let now = $state(Date.now())
 
   const modeMeta = {
     'tls': { label: 'TLS', title: 'TLS — one-way authentication' },
@@ -72,25 +74,34 @@
     ].join('\n'),
   }
 
-  // svelte action: render mermaid source into a node (lazy-loads mermaid)
+  // lazy-load + initialize mermaid once
+  let mermaidReady
+  function loadMermaid() {
+    mermaidReady ??= import('mermaid').then(({ default: mermaid }) => {
+      mermaid.initialize({
+        startOnLoad: false,
+        theme: 'base',
+        themeVariables: {
+          background: 'transparent',
+          primaryColor: '#17171c',
+          primaryTextColor: '#ececf1',
+          primaryBorderColor: '#232329',
+          lineColor: '#8b8d98',
+          edgeLabelBackground: '#121216',
+          fontFamily: 'ui-sans-serif, system-ui, sans-serif',
+          fontSize: '14px',
+        },
+        flowchart: { curve: 'basis', padding: 10 },
+      })
+      return mermaid
+    })
+    return mermaidReady
+  }
+
+  // svelte action: render mermaid source into a node
   let mmdSeq = 0
   async function diagram(node, code) {
-    const { default: mermaid } = await import('mermaid')
-    mermaid.initialize({
-      startOnLoad: false,
-      theme: 'base',
-      themeVariables: {
-        background: 'transparent',
-        primaryColor: '#17171c',
-        primaryTextColor: '#ececf1',
-        primaryBorderColor: '#232329',
-        lineColor: '#8b8d98',
-        edgeLabelBackground: '#121216',
-        fontFamily: 'ui-sans-serif, system-ui, sans-serif',
-        fontSize: '14px',
-      },
-      flowchart: { curve: 'basis', padding: 10 },
-    })
+    const mermaid = await loadMermaid()
     const render = async (src) => {
       try {
         const { svg } = await mermaid.render('mmd-' + (++mmdSeq), src)
@@ -104,16 +115,28 @@
   }
 
   async function renewCert(serial) {
-    renewMsg = `Renewing ${serial.slice(0, 12)}...`
+    renewing = serial
+    renewMsg = null
     try {
       const r = await fetch(`/api/certificates/${serial}/renew`, { method: 'POST' })
       const data = await r.json()
       if (!r.ok) throw new Error(data.error || 'renew failed')
-      renewMsg = `✓ ${serial.slice(0, 12)} renewed — new expiry: ${new Date(data.notAfter).toLocaleString()}`
+      renewMsg = { ok: true, text: `✓ ${serial.slice(0, 12)} renewed — new expiry: ${fmtDate(data.notAfter)}` }
       await refreshList()
     } catch (err) {
-      renewMsg = '✗ ' + err.message
+      renewMsg = { ok: false, text: '✗ ' + err.message }
+    } finally {
+      renewing = ''
     }
+  }
+
+  // remaining validity → badge color + relative label
+  function expiry(iso) {
+    const ms = new Date(iso) - now
+    if (ms <= 0) return { cls: 'red', text: 'expired' }
+    const days = Math.floor(ms / 86400000)
+    const text = days >= 1 ? `${days}d left` : `${Math.max(1, Math.floor(ms / 3600000))}h left`
+    return { cls: days < 7 ? 'amber' : 'green', text }
   }
 
   async function fetchRoots() {
@@ -243,7 +266,10 @@
   refreshList()
   fetchRoots()
   fetchProvisioners()
-  setInterval(refreshHealth, 10000)
+  setInterval(() => {
+    refreshHealth()
+    now = Date.now()
+  }, 10000)
 </script>
 
 <div class="app">
@@ -263,20 +289,20 @@
     </div>
 
     <nav>
-      <button class:active={tab === 'issue'} onclick={() => (tab = 'issue')}>
-        <span class="ico">⚡</span> Issue
+      <button class:active={tab === 'issue'} aria-current={tab === 'issue' ? 'page' : undefined} onclick={() => (tab = 'issue')}>
+        <span class="ico" aria-hidden="true">⚡</span> Issue
       </button>
-      <button class:active={tab === 'provisioners'} onclick={() => (tab = 'provisioners')}>
-        <span class="ico">🔑</span> Provisioners
+      <button class:active={tab === 'provisioners'} aria-current={tab === 'provisioners' ? 'page' : undefined} onclick={() => (tab = 'provisioners')}>
+        <span class="ico" aria-hidden="true">🔑</span> Provisioners
       </button>
-      <button class:active={tab === 'issued'} onclick={() => (tab = 'issued')}>
-        <span class="ico">📜</span> Certificates
+      <button class:active={tab === 'issued'} aria-current={tab === 'issued' ? 'page' : undefined} onclick={() => (tab = 'issued')}>
+        <span class="ico" aria-hidden="true">📜</span> Certificates
         {#if certs.length}<span class="count">{certs.length}</span>{/if}
       </button>
     </nav>
 
     <div class="side-bottom">
-      <div class="status" class:ok={caStatus?.ca === 'ok'} class:down={caStatus?.ca !== 'ok'}>
+      <div class="status" class:ok={caStatus?.ca === 'ok'} class:down={caStatus && caStatus.ca !== 'ok'}>
         <span class="dot"></span>
         <div>
           {#if caStatus}
@@ -292,7 +318,7 @@
 
   <!-- ============ CONTENT ============ -->
   <main>
-    {#if caStatus?.ca !== 'ok'}
+    {#if caStatus && caStatus.ca !== 'ok'}
       <div class="banner warn">
         CA unreachable at <code>{caStatus?.url || 'https://localhost:9000'}</code> —
         make sure <code>docker compose up -d</code> is running.
@@ -466,22 +492,32 @@
         </div>
 
         <form onsubmit={createProvisioner} class="prov-form">
-          <input bind:value={newProvName} placeholder="new provisioner name" required
-                 pattern="[a-zA-Z0-9][a-zA-Z0-9_-]*" />
-          <select bind:value={newProvDefault} title="default validity">
-            <option value="1h">def 1h</option>
-            <option value="24h">def 24h</option>
-            <option value="720h">def 30d</option>
-            <option value="8760h">def 1y</option>
-          </select>
-          <select bind:value={newProvMax} title="max validity">
-            <option value="720h">max 30d</option>
-            <option value="8760h">max 1y</option>
-          </select>
+          <label class="grow">
+            <span>Name</span>
+            <input bind:value={newProvName} placeholder="new-provisioner" required
+                   pattern="[a-zA-Z0-9][a-zA-Z0-9_-]*" />
+          </label>
+          <label>
+            <span>Default validity</span>
+            <select bind:value={newProvDefault}>
+              <option value="1h">1 hour</option>
+              <option value="24h">24 hours</option>
+              <option value="720h">30 days</option>
+              <option value="8760h">1 year</option>
+            </select>
+          </label>
+          <label>
+            <span>Max validity</span>
+            <select bind:value={newProvMax}>
+              <option value="720h">30 days</option>
+              <option value="8760h">1 year</option>
+            </select>
+          </label>
           <button class="btn primary" type="submit" disabled={provBusy || !newProvName}>+ Add</button>
         </form>
         {#if provError}<p class="msg err">{provError}</p>{/if}
 
+        <div class="table-wrap">
         <table>
           <thead><tr><th>Name</th><th>Type</th><th>Key</th><th></th></tr></thead>
           <tbody>
@@ -503,6 +539,7 @@
             {/each}
           </tbody>
         </table>
+        </div>
         <p class="hint">“Key” shows whether the provisioner private key is stored on this dashboard (usable for issuing).</p>
       </section>
 
@@ -511,8 +548,10 @@
       <section class="card">
         <div class="card-head">
           <h2>Issued Certificates</h2>
-          {#if renewMsg}<p class="mono">{renewMsg}</p>{/if}
         </div>
+        {#if renewMsg}
+          <p class="msg" class:ok={renewMsg.ok} class:err={!renewMsg.ok} role="status">{renewMsg.text}</p>
+        {/if}
         {#if certs.length === 0}
           <p class="empty">No certificates issued from this dashboard yet.</p>
         {:else}
@@ -523,17 +562,22 @@
               </thead>
               <tbody>
                 {#each certs as c}
+                  {@const exp = expiry(c.notAfter)}
                   <tr>
                     <td><strong>{c.subject}</strong><br /><small class="dim">{c.sans.filter((s) => s !== c.subject).join(', ') || '—'}</small></td>
                     <td><span class="badge">{c.provisioner || 'admin'}</span></td>
                     <td><code>{c.serial.slice(0, 12)}…</code></td>
                     <td class="dim">{c.issuer}</td>
-                    <td>{fmtDate(c.notAfter)}</td>
+                    <td>
+                      <span class="badge {exp.cls}">{exp.text}</span><br />
+                      <small class="dim">{fmtDate(c.notAfter)}</small>
+                    </td>
                     <td class="right">
                       <div class="row-actions">
-                        <a class="icon-btn" title="Download certificate (fullchain)" href={`/api/certificates/${c.serial}/download/crt`} download>⬇</a>
-                        <a class="icon-btn" title="Download private key" href={`/api/certificates/${c.serial}/download/key`} download>🔑</a>
-                        <button class="icon-btn" title="Renew certificate" onclick={() => renewCert(c.serial)}>⟳</button>
+                        <a class="icon-btn" title="Download certificate (fullchain)" aria-label="Download certificate for {c.subject}" href={`/api/certificates/${c.serial}/download/crt`} download>⬇</a>
+                        <a class="icon-btn" title="Download private key" aria-label="Download private key for {c.subject}" href={`/api/certificates/${c.serial}/download/key`} download>🔑</a>
+                        <button class="icon-btn" class:spin={renewing === c.serial} title="Renew certificate" aria-label="Renew certificate for {c.subject}"
+                                disabled={!!renewing} onclick={() => renewCert(c.serial)}>⟳</button>
                       </div>
                     </td>
                   </tr>
@@ -672,23 +716,20 @@
     transition: transform 0.1s, opacity 0.15s, background 0.15s, border-color 0.15s;
   }
   button:disabled { opacity: 0.45; cursor: not-allowed; }
+  button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .btn.primary {
     padding: 10px 18px; font-weight: 600; color: white;
     background: linear-gradient(135deg, var(--accent), var(--accent-2));
     box-shadow: 0 4px 16px rgba(139, 92, 246, 0.3);
   }
   .btn.primary:not(:disabled):hover { transform: translateY(-1px); }
-  .btn.ghost {
-    background: var(--surface-2); color: var(--text);
-    border: 1px solid var(--border); padding: 8px 12px; font-size: 0.8rem;
-  }
-  .btn.ghost:not(:disabled):hover { border-color: var(--accent); }
   .btn.sm { padding: 5px 10px; font-size: 0.75rem; }
   .btn.danger { background: rgba(248, 113, 113, 0.12); color: var(--red); border: 1px solid rgba(248, 113, 113, 0.3); }
 
   .msg { font-size: 0.85rem; padding: 8px 12px; border-radius: 8px; }
   .msg.err { background: rgba(248, 113, 113, 0.1); color: var(--red); border: 1px solid rgba(248, 113, 113, 0.25); }
-  .hint { font-size: 0.72rem; color: var(--muted); margin: 10px 0 0; }
+  .msg.ok { background: rgba(52, 211, 153, 0.08); color: var(--green); border: 1px solid rgba(52, 211, 153, 0.25); }
+  .hint { font-size: 0.78rem; color: var(--muted); margin: 10px 0 0; }
   .empty { color: var(--muted); font-size: 0.85rem; }
   .dim { color: var(--muted); }
 
@@ -702,7 +743,6 @@
     background: rgba(52, 211, 153, 0.15); color: var(--green);
     font-weight: 700; font-size: 0.72rem; padding: 3px 10px; border-radius: 999px;
   }
-  .dl-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
   details { margin-top: 10px; }
   summary { cursor: pointer; font-size: 0.8rem; color: var(--muted); }
   pre {
@@ -710,9 +750,9 @@
     overflow: auto; font-size: 0.7rem; max-height: 300px;
   }
 
-  .prov-form { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
-  .prov-form input { flex: 2; min-width: 200px; }
-  .prov-form select { flex: 1; min-width: 90px; }
+  .prov-form { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 16px; }
+  .prov-form label { flex: 1; min-width: 130px; }
+  .prov-form label.grow { flex: 2; min-width: 200px; }
   .prov-form button { flex: 0 0 auto; }
 
   .row-actions { display: flex; gap: 6px; justify-content: flex-end; }
@@ -723,7 +763,9 @@
     text-decoration: none; transition: color 0.15s, border-color 0.15s;
   }
   a.icon-btn { cursor: pointer; }
-  .icon-btn:hover { color: var(--text); border-color: var(--accent); }
+  .icon-btn:not(:disabled):hover { color: var(--text); border-color: var(--accent); }
+  .icon-btn.spin { animation: spin 0.9s linear infinite; opacity: 1; }
+  @keyframes spin { to { transform: rotate(360deg); } }
 
   .table-wrap { overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
@@ -737,6 +779,8 @@
     background: var(--surface-2); border: 1px solid var(--border); color: var(--muted);
   }
   .badge.green { color: var(--green); border-color: rgba(52, 211, 153, 0.3); }
+  .badge.amber { color: #fbbf24; border-color: rgba(251, 191, 36, 0.35); }
+  .badge.red { color: var(--red); border-color: rgba(248, 113, 113, 0.35); }
   .badge.dimb { opacity: 0.5; }
 
   .guide-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
@@ -754,7 +798,8 @@
     padding: 10px; margin-bottom: 12px;
     background: var(--bg); border: 1px solid var(--border); border-radius: 10px;
   }
-  .diagram svg { max-width: 100%; height: auto; }
+  .diagram { overflow-x: auto; }
+  .diagram :global(svg) { max-width: 100%; height: auto; }
   .use { font-size: 0.78rem !important; }
   .use strong { color: var(--accent) !important; }
 
@@ -765,7 +810,7 @@
   }
   .role h4 { margin: 0 0 6px; font-size: 0.85rem; }
   .role > p { margin: 0 0 12px; font-size: 0.76rem; color: var(--muted); }
-  .dl-list { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .dl-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px; }
   .dl-list button {
     position: relative;
     display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
@@ -774,7 +819,7 @@
     border: 1px solid var(--border);
     padding: 8px 10px; font-size: 0.76rem; border-radius: 8px;
   }
-  .dl-list button small { color: var(--muted); font-size: 0.64rem; padding-right: 18px; }
+  .dl-list button small { color: var(--muted); font-size: 0.7rem; padding-right: 18px; }
   .dl-list button::after {
     content: '⬇'; font-size: 0.7rem; color: var(--accent);
     position: absolute; top: 8px; right: 8px;
@@ -784,5 +829,23 @@
   .dl-list button:not(:disabled):hover {
     border-color: var(--accent);
     background: rgba(139, 92, 246, 0.08);
+  }
+
+  /* narrow screens: sidebar becomes a top bar, forms go single-column */
+  @media (max-width: 760px) {
+    .app { flex-direction: column; }
+    aside {
+      width: auto; height: auto; position: static;
+      border-right: none; border-bottom: 1px solid var(--border);
+    }
+    .brand { padding: 14px 16px 6px; }
+    nav { flex-direction: row; overflow-x: auto; padding: 6px 12px; }
+    nav button { flex-shrink: 0; }
+    nav button.active { box-shadow: inset 0 -2px 0 var(--accent); }
+    .side-bottom { border-top: none; padding: 0 12px 12px; }
+    main { padding: 16px; }
+    .card { padding: 16px; }
+    .grid-2 { grid-template-columns: 1fr; }
+    .span-2 { grid-column: auto; }
   }
 </style>

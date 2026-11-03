@@ -6,7 +6,7 @@ dashboard/server/jwk/
 
 # ===== RAHASIA: sertifikat + private key hasil issue =====
 dashboard/server/issued/
-mqtt/certs/
+example/*/certs/
 
 # ===== build artifacts =====
 dashboard/server/dashboard-server

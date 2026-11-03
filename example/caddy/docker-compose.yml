@@ -1,0 +1,28 @@
+name: caddy
+
+services:
+  caddy:
+    image: caddy:2.10
+    container_name: caddy
+    restart: unless-stopped
+    ports:
+      - "8443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./certs/root_ca.crt:/certs/root_ca.crt:ro
+      - caddy_data:/data
+    networks:
+      step-ca:
+        # step-ca memvalidasi challenge ACME dengan menghubungi app.local,
+        # alias ini membuat nama tersebut mengarah ke container Caddy
+        aliases:
+          - app.local
+
+# bergabung ke network step-ca (dibuat oleh docker-compose.yml di root)
+networks:
+  step-ca:
+    external: true
+    name: step-ca_default
+
+volumes:
+  caddy_data:
